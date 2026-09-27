@@ -1571,6 +1571,29 @@ const apiRoutes: readonly WebRoute[] = [
   },
   {
     method: "GET",
+    path: "/api/replay/results",
+    handle: async (c) => {
+      const dir = process.env.REPLAY_DIR ?? join(ROOT, "..", "..", "..", "own-your-intelligence-hack", "replay");
+      for (const name of ["results.jsonl", "sample-results.jsonl"]) {
+        const file = join(dir, name);
+        if (!existsSync(file)) continue;
+        const rows = readFileSync(file, "utf8")
+          .split("\n")
+          .filter((line) => line.trim())
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line) as unknown];
+            } catch {
+              return [];
+            }
+          });
+        return void json(c.res, 200, { source: name, rows });
+      }
+      return void json(c.res, 200, { source: null, rows: [] });
+    },
+  },
+  {
+    method: "GET",
     path: "/api/surface-config",
     handle: async (c) => {
       const { res } = c;

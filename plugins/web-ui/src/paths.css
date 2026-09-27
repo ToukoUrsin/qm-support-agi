@@ -1,0 +1,317 @@
+:root {
+  --paths-w: clamp(400px, 36vw, 600px);
+  --paths-recalled: #1a7f37;
+  --paths-explored: #b25e00;
+  --paths-cost: #2563eb;
+}
+.dark {
+  --paths-recalled: #3fb950;
+  --paths-explored: #e3a03a;
+  --paths-cost: #6aa6ff;
+}
+body.paths-open .layout {
+  margin-right: var(--paths-w);
+}
+.paths-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--paths-w);
+  box-sizing: border-box;
+  border-left: 1px solid var(--border);
+  background: var(--background);
+  overflow-y: auto;
+  z-index: 40;
+}
+.paths-host {
+  overflow-y: auto;
+  height: 100%;
+}
+.paths-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+.paths-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.paths-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+.paths-session {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.paths-close {
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.paths-close:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.paths-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  padding: 14px 16px;
+}
+.paths-card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 650;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.paths-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.paths-badge {
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+}
+.paths-badge.recalled {
+  color: var(--paths-recalled);
+  background: color-mix(in srgb, var(--paths-recalled) 12%, transparent);
+}
+.paths-badge.explored {
+  color: var(--paths-explored);
+  background: color-mix(in srgb, var(--paths-explored) 12%, transparent);
+}
+.paths-badge.idle {
+  color: var(--muted-foreground);
+}
+.paths-chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.paths-running {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--paths-explored);
+  animation: paths-pulse 1.2s ease-in-out infinite;
+}
+@keyframes paths-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.paths-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+.paths-kpis div {
+  display: flex;
+  flex-direction: column;
+}
+.paths-kpis b {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.paths-kpis.big b {
+  font-size: 34px;
+}
+.paths-kpis b.good {
+  color: var(--paths-recalled);
+}
+.paths-kpis span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.paths-steps {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.paths-steps li {
+  counter-increment: step;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+}
+.paths-steps li::before {
+  content: counter(step);
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.paths-steps li:first-child:has(code) code {
+  font-weight: 700;
+}
+.paths-steps li.err code {
+  color: var(--destructive, #d33);
+  text-decoration: line-through;
+}
+.paths-steps code {
+  font-size: 15px;
+  background: none;
+}
+.paths-ms {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.paths-history {
+  list-style: none;
+  margin: -4px 0 0;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.paths-history li {
+  display: grid;
+  grid-template-columns: 12px 1.4fr 1fr 1fr 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.paths-hist-mode {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.paths-dot,
+.sw.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--muted-foreground);
+}
+.paths-dot.recalled,
+.sw.dot.recalled {
+  background: var(--paths-recalled);
+}
+.paths-dot.explored,
+.sw.dot.explored {
+  background: var(--paths-explored);
+}
+.paths-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: 6px;
+}
+.paths-chart .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.paths-chart .axis {
+  fill: var(--muted-foreground);
+  font-size: 11px;
+}
+.paths-chart .pt {
+  opacity: 0.75;
+}
+.paths-chart .pt.recalled {
+  fill: var(--paths-recalled);
+}
+.paths-chart .pt.explored {
+  fill: var(--paths-explored);
+}
+.paths-chart .line-cost {
+  fill: none;
+  stroke: var(--paths-cost);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.paths-chart .line-steps {
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+.paths-chart .lbl-cost {
+  fill: var(--paths-cost);
+  font-size: 13px;
+  font-weight: 700;
+}
+.paths-chart .lbl-steps {
+  fill: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+.paths-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 4px;
+}
+.paths-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sw {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 3px solid var(--paths-cost);
+}
+.sw.steps {
+  border-top: 2px dashed var(--muted-foreground);
+}
+.sw.dot {
+  border: 0;
+}
+.paths-foot,
+.paths-empty {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.paths-error {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}

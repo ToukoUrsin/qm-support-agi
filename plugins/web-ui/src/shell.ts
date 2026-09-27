@@ -65,6 +65,7 @@ import {
   singlePaneSessionId,
 } from "./split";
 import { activityOf } from "./session-list";
+import { PathsGlyph, pathsDrawerOpen, togglePathsDrawer } from "./paths";
 import { replaceChildrenPreservingFocus } from "./pane-focus";
 import {
   openSession,
@@ -555,6 +556,26 @@ function inboxNavRow(): TemplateResult {
   </a>`;
 }
 
+function pathsNavRow(): TemplateResult {
+  return html`<button
+    class="navrow ${pathsDrawerOpen() ? "active" : ""}"
+    type="button"
+    aria-label="Paths"
+    aria-pressed=${pathsDrawerOpen() ? "true" : "false"}
+    draggable="true"
+    @dragstart=${(e: DragEvent) => {
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+      beginPaneKindDrag("pathsView", "live");
+    }}
+    @dragend=${() => endPaneDrag()}
+    @click=${() => togglePathsDrawer()}
+  >
+    ${icon(PathsGlyph, 17)}<span>Paths</span>
+  </button>`;
+}
+
+window.addEventListener("paths-drawer-change", () => renderSidebarTop());
+
 export function renderSidebarFooter(): void {
   if (!footerEl) return;
   render(
@@ -627,6 +648,7 @@ export function renderSidebarTop(): void {
       <nav class="nav quick-nav" @click=${onNavClick}>
         ${navRow("chats", ICON.home, "Home")}
         ${can("inbox") ? html`${inboxNavRow()} ${navRow("calendar", ICON.calendar, "Calendar")}` : nothing}
+        ${pathsNavRow()}
         ${actionRow(Search, "Search", () => {
           hideTooltip();
           openChatSearch();
