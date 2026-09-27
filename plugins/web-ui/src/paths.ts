@@ -52,6 +52,27 @@ const KNOWN_TOOLS = [
   "cancel_order",
   "send_reply",
   "route_request",
+  "pull_up_account",
+  "verify_identity",
+  "validate_purchase",
+  "shipping_status",
+  "check_system",
+  "membership",
+  "subscription_status",
+  "record_reason",
+  "enter_details",
+  "offer_refund",
+  "update_order",
+  "update_account",
+  "update_subscription",
+  "make_purchase",
+  "make_password",
+  "promo_code",
+  "send_link",
+  "notify_team",
+  "troubleshoot_step",
+  "get_refunds",
+  "list_products",
 ];
 
 function shortTool(name: string): string {
@@ -121,9 +142,15 @@ function buildTurns(entries: SessionEntry[]): Turn[] {
   turns.forEach((t, i) => {
     t.running = i === turns.length - 1 && last?.type !== "assistant" && Date.now() - t.endedAt < 120_000;
   });
+  // A follow-up turn without its own recall_path (e.g. the customer answering a question) continues the
+  // ticket's earlier mode instead of counting as a fresh exploration.
+  let prev: Turn["mode"] = "none";
   for (const t of turns) {
+    const recall = t.tools.find((s) => s.name === "recall_path");
     if (t.tools.length === 0) t.mode = "none";
-    else t.mode = recallHit(t.tools[0]) ? "recalled" : "explored";
+    else if (recall) t.mode = recallHit(recall) ? "recalled" : "explored";
+    else t.mode = prev === "none" ? "explored" : prev;
+    if (t.mode !== "none") prev = t.mode;
     t.savedPath = t.tools.some((s) => s.name === "save_path" && !s.error);
   }
   return turns;
