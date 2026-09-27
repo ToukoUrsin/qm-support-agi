@@ -37,7 +37,17 @@ interface ReplayRow {
   ms?: number;
   tokens?: number;
   cost?: number;
+  normCost?: number;
   library?: number;
+  tier?: string;
+  error?: string;
+}
+
+interface Plan {
+  id: string;
+  enabled?: boolean;
+  source?: { procedureId?: string };
+  [k: string]: unknown;
 }
 
 const KNOWN_TOOLS = [
@@ -180,12 +190,16 @@ async function fetchTurnCosts(sessionId: string, scopeId: string, turns: Turn[])
   });
 }
 
+// ?run=label-run pins the learning curve to the finished snapshot run (the SPA drops the query after load).
+const SNAPSHOT = /[?&]run=label-run\b/.test(location.search);
+
 const state = {
   sessionId: null as string | null,
   sessionTitle: "",
   turns: [] as Turn[],
   replay: [] as ReplayRow[],
   replaySource: null as string | null,
+  plans: [] as Plan[],
   error: "",
 };
 const hosts = new Set<HTMLElement>();
@@ -205,14 +219,17 @@ function currentSessionId(): string | null {
 async function poll(): Promise<void> {
   try {
     if (replayTick++ % 4 === 0) {
-      const r = await api<{ source: string | null; rows: ReplayRow[] }>("/api/replay/results");
+      const r = await api<{ source: string | null; rows: ReplayRow[] }>(
+        `/api/replay/results${SNAPSHOT ? "?run=label-run" : ""}`,
+      );
       state.replay = r.rows;
       state.replaySource = r.source;
+      state.plans = (await api<{ plans: Plan[] }>("/api/replay/plans").catch(() => ({ plans: [] }))).plans;
     }
     const id = currentSessionId();
     state.sessionId = id;
     if (id) {
-      const page = await fetchTranscript(id, { tailTurns: 6 });
+      const page = await fetchTranscript(id, { tailTurns: 8 });
       state.sessionTitle = page.session?.title ?? "";
       const turns = buildTurns(page.entries);
       await fetchTurnCosts(
@@ -243,152 +260,377 @@ function stopPollingIfIdle(): void {
   timer = null;
 }
 
-const fmtMs = (ms: number): string => (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`);
+const fmtMs = (ms: number): string => (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
 const fmtUsd = (v: number): string => (v < 0.1 ? `$${v.toFixed(3)}` : `$${v.toFixed(2)}`);
 
-function badge(mode: Turn["mode"], running: boolean): TemplateResult {
-  if (mode === "recalled") return html`<span class="paths-badge recalled">Recalled path</span>`;
-  if (mode === "explored") return html`<span class="paths-badge explored">Explored</span>`;
-  return html`<span class="paths-badge idle">${running ? "Thinking…" : "No tools"}</span>`;
+interface Recall {
+  found: boolean;
+  id?: string;
+  title?: string;
+  similarity?: number;
+  normalized?: string;
+  backend?: string;
+  steps?: string[];
+  tools?: string[];
+  uses?: number;
+  closest?: string | null;
+  planId?: string;
+  earlierTickets?: { id: string; text: string; tier?: string }[];
 }
 
-function turnCard(t: Turn): TemplateResult {
-  const elapsed = (t.running ? Date.now() : t.endedAt) - t.startedAt;
-  return html`<section class="paths-card paths-live">
-    <div class="paths-card-head">
-      ${badge(t.mode, t.running)} ${t.savedPath ? html`<span class="paths-chip">+ saved new path</span>` : nothing}
-      ${t.running ? html`<span class="paths-running">live</span>` : nothing}
+function parseJsonish(text: string): Record<string, unknown> | null {
+  const tryParse = (t: string): unknown => {
+    try {
+      return JSON.parse(t);
+    } catch {
+      return null;
+    }
+  };
+  let v: unknown = tryParse(text);
+  for (let i = 0; i < 4 && v != null; i++) {
+    if (typeof v === "string") v = tryParse(v);
+    else if (Array.isArray(v)) v = v.find((c) => c && typeof c === "object" && "text" in c)?.text ?? v[0];
+    else if (typeof v === "object" && "content" in (v as object)) v = (v as { content: unknown }).content;
+    else if (typeof v === "object" && "text" in (v as object) && !("found" in (v as object)))
+      v = (v as { text: unknown }).text;
+    else break;
+  }
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  const m = text.indexOf('{\\"found');
+  if (m >= 0) return parseJsonish(`"${text.slice(m).replace(/"\s*\}\s*\]?\s*\}?\s*$/, "")}"`);
+  return null;
+}
+
+function recallOf(turns: Turn[]): Recall | null {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const step = turns[i]!.tools.find((s) => s.name === "recall_path");
+    if (step && step.result) {
+      const r = parseJsonish(step.result);
+      if (r && "found" in r) return r as unknown as Recall;
+      return { found: recallHit(step) };
+    }
+  }
+  return null;
+}
+
+function savedOf(t: Turn): { id?: string; title?: string } | null {
+  const step = t.tools.find((s) => s.name === "save_path" && !s.error);
+  if (!step) return null;
+  const r = parseJsonish(step.result);
+  return r ? { id: r.id as string | undefined, title: r.title as string | undefined } : {};
+}
+
+const toolOfStep = (s: string): string => s.trim().split(/[\s(]/)[0] ?? s;
+
+// The current ticket = the latest turn plus earlier follow-up turns back to the one that called recall_path.
+function ticketTurns(turns: Turn[]): Turn[] {
+  let start = turns.length - 1;
+  while (start > 0 && !turns[start]!.tools.some((s) => s.name === "recall_path")) start--;
+  return turns.slice(Math.max(0, start));
+}
+
+type Tier = "explored" | "recalled" | "compiled";
+
+function tierBadge(tier: Tier | "none", running: boolean): TemplateResult {
+  if (tier === "compiled")
+    return html`<div class="pb-tier compiled"><b>COMPILED</b><span>no model calls, fixed program</span></div>`;
+  if (tier === "recalled")
+    return html`<div class="pb-tier recalled"><b>RECALLED PATH</b><span>reused a learned path</span></div>`;
+  if (tier === "explored")
+    return html`<div class="pb-tier explored"><b>EXPLORED</b><span>solved from scratch</span></div>`;
+  return html`<div class="pb-tier idle"><b>${running ? "Working…" : "Waiting for a ticket"}</b></div>`;
+}
+
+function planFor(r: Recall | null): Plan | undefined {
+  if (!r) return undefined;
+  return state.plans.find((p) => (r.planId && p.id === r.planId) || (r.id && p.source?.procedureId === r.id));
+}
+
+function comparison(pathTools: string[], calls: ToolStep[]): TemplateResult {
+  const run = calls.filter((c) => c.name !== "recall_path" && c.name !== "save_path");
+  const ran = new Set(run.map((c) => c.name));
+  const skipped = pathTools.filter((t) => !ran.has(t));
+  const inPath = new Set(pathTools);
+  return html`<div class="pb-compare">
+      <div>
+        <h4>Learned path</h4>
+        <ol class="pb-list">
+          ${pathTools.map((t) => html`<li class=${ran.has(t) ? "ok" : "skip"}><code>${t}</code></li>`)}
+        </ol>
+      </div>
+      <div>
+        <h4>This ticket</h4>
+        <ol class="pb-list">
+          ${run.map(
+          (c) =>
+            html`<li class=${c.error ? "err" : inPath.has(c.name) ? "ok" : "extra"}>
+              <span class="pb-mark">${c.error ? "!" : inPath.has(c.name) ? "✓" : "+"}</span><code>${c.name}</code
+              ><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+            </li>`,
+        )}
+          ${skipped.map((t) => html`<li class="skip"><span class="pb-mark">–</span><code>${t}</code><span class="pb-ms">skipped</span></li>`)}
+        </ol>
+      </div>
     </div>
-    <div class="paths-kpis">
-      <div><b>${fmtMs(elapsed)}</b><span>turn time</span></div>
-      <div><b>${t.costUsd == null ? "—" : fmtUsd(t.costUsd)}</b><span>cost</span></div>
-      <div><b>${t.tools.length}</b><span>tool calls</span></div>
+    <p class="pb-legend">
+      <span class="ok">✓ followed the path</span><span class="extra">+ extra call</span
+      ><span class="skip">– skipped</span>
+    </p>`;
+}
+
+function ticketSection(): TemplateResult {
+  if (!state.turns.length)
+    return html`<section class="pb-card"><p class="pb-empty">Send a ticket to see how it was handled.</p></section>`;
+  const tt = ticketTurns(state.turns);
+  const calls = tt.flatMap((t) => t.tools);
+  const running = tt.at(-1)!.running;
+  const r = recallOf(tt);
+  const plan = planFor(r);
+  const compiled = !!r?.planId || tt.every((t) => t.tools.length > 0 && t.costUsd === 0);
+  const tier: Tier | "none" = !calls.length ? "none" : compiled ? "compiled" : r?.found ? "recalled" : "explored";
+  const saved = tt.map(savedOf).find(Boolean);
+  const elapsed = tt.reduce((s, t) => s + ((t.running ? Date.now() : t.endedAt) - t.startedAt), 0);
+  const cost = tt.some((t) => t.costUsd != null) ? tt.reduce((s, t) => s + (t.costUsd ?? 0), 0) : null;
+  const pathTools = r?.tools?.length ? r.tools : (r?.steps ?? []).map(toolOfStep);
+  const uses = r?.uses;
+  return html`<section class="pb-card">
+    <div class="pb-row">${tierBadge(tier, running)} ${running ? html`<span class="pb-live">live</span>` : nothing}</div>
+    <div class="pb-kpis">
+      <div><b>${fmtMs(elapsed)}</b><span>time</span></div>
+      <div><b>${cost == null ? "—" : fmtUsd(cost)}</b><span>cost</span></div>
+      <div><b>${calls.length}</b><span>tool calls</span></div>
     </div>
-    <ol class="paths-steps">
-      ${t.tools.map(
-        (s) =>
-          html`<li class=${s.error ? "err" : ""}>
-            <code>${s.name}</code><span class="paths-ms">${s.ms == null ? "…" : fmtMs(s.ms)}</span>
-          </li>`,
-      )}
-    </ol>
+
+    ${
+      r?.normalized
+        ? html`<div class="pb-block">
+            <h4>Standardized request</h4>
+            <p class="pb-quote">${r.normalized}</p>
+          </div>`
+        : nothing
+    }
+
+    <div class="pb-block">
+      <h4>Matched to</h4>
+      ${
+        r?.found
+          ? html`<p class="pb-match"><b>${r.title ?? "learned path"}</b> <code class="pb-id">${r.id ?? ""}</code></p>
+              <p class="pb-meta">
+                ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}found in
+                <b>${r.backend === "memorable" || !r.backend ? "Memorable" : r.backend}</b> memory
+              </p>`
+          : r
+            ? html`<p class="pb-match none">No learned path yet</p>
+                <p class="pb-meta">
+                  ${r.closest ? html`closest: ${r.closest.length > 60 ? `${r.closest.slice(0, 60)}…` : r.closest}${r.similarity != null ? ` (${r.similarity.toFixed(2)})` : ""} · ` : nothing}searched
+                  Memorable memory
+                </p>`
+            : html`<p class="pb-meta">${running ? "Looking up memory…" : "No memory lookup in this ticket."}</p>`
+      }
+      ${
+        saved
+          ? html`<p class="pb-saved">
+              New path saved to Memorable${saved.title ? html`: <b>${saved.title}</b>` : nothing}
+              ${saved.id ? html`<code class="pb-id">${saved.id}</code>` : nothing}
+            </p>`
+          : nothing
+      }
+    </div>
+
+    ${
+      r?.found
+        ? html`<div class="pb-block">
+            <h4>The learned path${uses != null ? ` · used ${uses}× before` : ""}</h4>
+            ${
+            r.earlierTickets?.length
+              ? html`<ul class="pb-earlier">
+                  ${r.earlierTickets
+                  .slice(0, 5)
+                  .map(
+                    (e) => html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
+                  )}
+                </ul>`
+              : nothing
+          }
+          </div>`
+        : nothing
+    }
+    ${
+      pathTools.length
+        ? comparison(pathTools, calls)
+        : html`<div class="pb-block">
+            <h4>This ticket's tool calls</h4>
+            <ol class="pb-list">
+              ${calls.map(
+              (c) =>
+                html`<li class=${c.error ? "err" : ""}>
+                  <code>${c.name}</code><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+                </li>`,
+            )}
+            </ol>
+          </div>`
+    }
+    ${
+      plan
+        ? html`<details class="pb-plan">
+            <summary>
+              Compiled program
+              <code>${plan.id}</code>
+              ${plan.enabled === false ? html`<span class="pb-dim">(not yet promoted)</span>` : nothing}
+            </summary>
+            <pre>${JSON.stringify({ ...plan, reply: undefined }, null, 2)}</pre>
+          </details>`
+        : nothing
+    }
   </section>`;
 }
 
-const MODE_LABEL: Record<Turn["mode"], string> = { recalled: "Recalled", explored: "Explored", none: "—" };
+const EXPECTED = 400;
+const BUCKET = 25;
 
-function historyRow(t: Turn): TemplateResult {
-  return html`<li>
-    <span class="paths-dot ${t.mode}"></span>
-    <span class="paths-hist-mode">${MODE_LABEL[t.mode]}</span>
-    <span>${t.tools.length} calls</span>
-    <span>${fmtMs(t.endedAt - t.startedAt)}</span>
-    <span>${t.costUsd == null ? "—" : fmtUsd(t.costUsd)}</span>
-  </li>`;
+function rowTier(r: ReplayRow): Tier | "error" {
+  if (r.tier === "error" || r.error) return "error";
+  if (r.tier === "compiled" || r.tier === "recalled" || r.tier === "explored") return r.tier;
+  return r.recalled ? "recalled" : "explored";
 }
 
-function rolling(values: number[], w: number): number[] {
-  return values.map((_, i) => {
-    const slice = values.slice(Math.max(0, i - w + 1), i + 1);
-    return slice.reduce((a, b) => a + b, 0) / slice.length;
-  });
+interface Bucket {
+  from: number;
+  to: number;
+  n: number;
+  share: Record<Tier, number>;
+  cost: number;
+  complete: boolean;
 }
 
-function curveChart(rows: ReplayRow[]): TemplateResult {
-  const W = 520;
-  const H = 220;
-  const pad = { l: 44, r: 70, t: 14, b: 28 };
-  const n = rows.length;
-  const cost = rows.map((r) => r.cost ?? 0);
-  const steps = rows.map((r) => r.steps ?? 0);
-  const maxCost = Math.max(...cost, 0.0001) * 1.08;
-  const maxSteps = Math.max(...steps, 1) * 1.08;
-  const x = (i: number): number => pad.l + (n <= 1 ? 0 : (i / (n - 1)) * (W - pad.l - pad.r));
-  const yc = (v: number): number => pad.t + (1 - v / maxCost) * (H - pad.t - pad.b);
-  const ys = (v: number): number => pad.t + (1 - v / maxSteps) * (H - pad.t - pad.b);
-  const costAvg = rolling(cost, 5);
-  const stepAvg = rolling(steps, 5);
-  const line = (vals: number[], y: (v: number) => number): string =>
-    vals.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const ticks = [0, 0.5, 1].map((f) => f * maxCost);
-  return html`<svg class="paths-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cost and tool calls per ticket">
-    ${ticks.map(
-      (v) => svg`<line class="grid" x1=${pad.l} x2=${W - pad.r} y1=${yc(v)} y2=${yc(v)}></line>
-        <text class="axis" x=${pad.l - 6} y=${yc(v) + 4} text-anchor="end">$${v.toFixed(2)}</text>`,
+function buckets(rows: ReplayRow[]): Bucket[] {
+  const out: Bucket[] = [];
+  for (let s = 0; s < rows.length; s += BUCKET) {
+    const slice = rows.slice(s, s + BUCKET);
+    const ok = slice.filter((r) => rowTier(r) !== "error");
+    const count = (t: Tier): number => ok.filter((r) => rowTier(r) === t).length / Math.max(ok.length, 1);
+    out.push({
+      from: s + 1,
+      to: s + BUCKET,
+      n: ok.length,
+      share: { explored: count("explored"), recalled: count("recalled"), compiled: count("compiled") },
+      cost: ok.reduce((a, r) => a + (r.cost ?? 0) + (r.normCost ?? 0), 0) / Math.max(ok.length, 1),
+      complete: slice.length === BUCKET && ok.length >= BUCKET * 0.8,
+    });
+  }
+  return out;
+}
+
+function curveChart(bs: Bucket[]): TemplateResult {
+  const W = 560;
+  const H = 250;
+  const pad = { l: 50, r: 16, t: 16, b: 40 };
+  const slots = EXPECTED / BUCKET;
+  const bw = (W - pad.l - pad.r) / slots;
+  const ih = H - pad.t - pad.b;
+  const maxCost = Math.max(0.05, ...bs.filter((b) => b.n).map((b) => b.cost)) * 1.1;
+  const yc = (v: number): number => pad.t + (1 - v / maxCost) * ih;
+  const pts = bs.map((b, i) => (b.n ? `${pad.l + bw * (i + 0.5)},${yc(b.cost).toFixed(1)}` : "")).filter(Boolean);
+  return html`<svg
+    class="pb-chart"
+    viewBox="0 0 ${W} ${H}"
+    role="img"
+    aria-label="Share of tickets per tier and cost per ticket"
+  >
+    ${[0, 0.5, 1].map(
+      (f) => svg`<line class="grid" x1=${pad.l} x2=${W - pad.r} y1=${yc(f * maxCost)} y2=${yc(f * maxCost)}></line>
+        <text class="axis" x=${pad.l - 8} y=${yc(f * maxCost) + 5} text-anchor="end">$${(f * maxCost).toFixed(2)}</text>`,
     )}
-    <text class="axis" x=${pad.l} y=${H - 8}>1</text>
-    <text class="axis" x=${W - pad.r} y=${H - 8} text-anchor="end">ticket ${n}</text>
-    ${rows.map(
-      (r, i) =>
-        svg`<circle class="pt ${r.recalled ? "recalled" : "explored"}" cx=${x(i)} cy=${yc(cost[i]!)} r="3"></circle>`,
-    )}
-    <path class="line-steps" d=${line(stepAvg, ys)}></path>
-    <path class="line-cost" d=${line(costAvg, yc)}></path>
-    <text class="lbl-cost" x=${x(n - 1) + 6} y=${yc(costAvg[n - 1]!) + 4}>${fmtUsd(costAvg[n - 1]!)}</text>
-    <text class="lbl-steps" x=${x(n - 1) + 6} y=${ys(stepAvg[n - 1]!) + 4}>${stepAvg[n - 1]!.toFixed(1)} calls</text>
+    ${bs.map((b, i) => {
+      if (!b.n) return svg``;
+      const x = pad.l + bw * i + 2;
+      let y = pad.t + ih;
+      return (["explored", "recalled", "compiled"] as Tier[]).map((t) => {
+        const h = b.share[t] * ih;
+        y -= h;
+        return svg`<rect class="bar ${t} ${b.complete ? "" : "partial"}" x=${x} y=${y} width=${bw - 4} height=${h}></rect>`;
+      });
+    })}
+    ${pts.length > 1 ? svg`<polyline class="line-cost" points=${pts.join(" ")}></polyline>` : nothing}
+    ${pts.map((p) => {
+      const [x, y] = p.split(",");
+      return svg`<circle class="pt-cost" cx=${x} cy=${y} r="4"></circle>`;
+    })}
+    <text class="axis" x=${pad.l} y=${H - 12}>ticket 1</text>
+    <text class="axis" x=${W / 2} y=${H - 12} text-anchor="middle">${EXPECTED / 2}</text>
+    <text class="axis" x=${W - pad.r} y=${H - 12} text-anchor="end">${EXPECTED}</text>
   </svg>`;
 }
 
 function curveSection(): TemplateResult {
   const rows = state.replay;
   if (!rows.length)
-    return html`<section class="paths-card">
+    return html`<section class="pb-card">
       <h3>Learning curve</h3>
-      <p class="paths-empty">Waiting for replay/results.jsonl…</p>
+      <p class="pb-empty">Waiting for the replay run…</p>
     </section>`;
   const n = rows.length;
-  const recalled = rows.filter((r) => r.recalled).length;
-  const library = rows.at(-1)?.library ?? new Set(rows.filter((r) => !r.recalled).map((r) => r.intent ?? r.id)).size;
-  const k = Math.min(10, Math.max(1, Math.floor(n / 3)));
-  const avg = (rs: ReplayRow[]): number => rs.reduce((s, r) => s + (r.cost ?? 0), 0) / rs.length;
-  const first = avg(rows.slice(0, k));
-  const last = avg(rows.slice(-k));
-  const drop = first > 0 ? Math.round((1 - last / first) * 100) : 0;
-  return html`<section class="paths-card">
+  const errors = rows.filter((r) => rowTier(r) === "error").length;
+  const bs = buckets(rows);
+  const done = bs.filter((b) => b.complete);
+  const inProgress = n < EXPECTED;
+  const first = done[0];
+  const last = done.length > 1 ? done.at(-1) : undefined;
+  const pct = (v: number): string => `${Math.round(v * 100)}%`;
+  return html`<section class="pb-card ${inProgress ? "pb-progress" : ""}">
     <h3>
       Learning curve
-      ${state.replaySource && state.replaySource !== "results.jsonl" ? html`<span class="paths-chip">sample data</span>` : nothing}
+      ${state.replaySource && state.replaySource !== "results.jsonl" ? html`<span class="pb-dim">${state.replaySource === "label-run" ? "finished earlier run" : "sample data"}</span>` : nothing}
     </h3>
-    <div class="paths-kpis big">
-      <div><b>${n}</b><span>tickets</span></div>
-      <div><b>${library}</b><span>path library</span></div>
-      <div><b>${Math.round((recalled / n) * 100)}%</b><span>recalled</span></div>
-      <div>
-        <b class=${drop > 0 ? "good" : ""}>${drop > 0 ? "−" : "+"}${Math.abs(drop)}%</b><span>cost/ticket</span>
-      </div>
+    ${
+      inProgress
+        ? html`<p class="pb-status">
+            Run in progress · ${n} of ${EXPECTED} tickets${errors ? ` · ${errors} failed (retrying)` : ""}
+          </p>`
+        : errors
+          ? html`<p class="pb-status">${errors} of ${n} tickets failed and are left out</p>`
+          : nothing
+    }
+    ${
+      first && last && !inProgress
+        ? html`<p class="pb-headline">
+            Tickets ${first.from}–${first.to}: <b>${fmtUsd(first.cost)}</b>/ticket · Tickets ${last.from}–${last.to}:
+            <b>${fmtUsd(last.cost)}</b>/ticket, ${pct(last.share.compiled)} compiled, ${pct(last.share.recalled)}
+            recalled
+          </p>`
+        : first
+          ? html`<p class="pb-headline dim">
+              So far: tickets ${first.from}–${first.to} <b>${fmtUsd(first.cost)}</b>/ticket${
+              last
+                ? html` → tickets ${last.from}–${last.to} <b>${fmtUsd(last.cost)}</b>/ticket,
+                    ${pct(last.share.recalled + last.share.compiled)} reused`
+                : nothing
+            }
+            </p>`
+          : nothing
+    }
+    ${curveChart(bs)}
+    <div class="pb-legend2">
+      <span><i class="sw explored"></i>explored</span>
+      <span><i class="sw recalled"></i>recalled path</span>
+      <span><i class="sw compiled"></i>compiled</span>
+      <span><i class="sw cost"></i>cost per ticket</span>
     </div>
-    ${curveChart(rows)}
-    <div class="paths-legend">
-      <span><i class="sw cost"></i>cost per ticket (5-ticket avg)</span>
-      <span><i class="sw steps"></i>tool calls per ticket</span>
-      <span><i class="sw dot recalled"></i>recalled</span>
-      <span><i class="sw dot explored"></i>explored</span>
-    </div>
-    <p class="paths-foot">First ${k}: ${fmtUsd(first)}/ticket · last ${k}: ${fmtUsd(last)}/ticket</p>
+    <p class="pb-foot">Each bar is 25 tickets; its colors show how those tickets were handled.</p>
   </section>`;
 }
 
 function panelTpl(onClose?: () => void): TemplateResult {
-  const latest = state.turns.at(-1);
-  const earlier = state.turns.slice(0, -1).reverse();
-  return html`<div class="paths-panel">
+  return html`<div class="paths-panel pb">
     <header class="paths-head">
-      ${icon(Route, 18)}
+      ${icon(Route, 22)}
       <h2>Paths</h2>
       <span class="paths-session" title=${state.sessionId ?? ""}
-        >${state.sessionTitle || (state.sessionId ? "current session" : "no session")}</span
+        >${state.sessionTitle || (state.sessionId ? "current ticket" : "no ticket")}</span
       >
       ${onClose ? html`<button class="paths-close" type="button" aria-label="Close Paths" @click=${onClose}>×</button>` : nothing}
     </header>
-    ${latest ? turnCard(latest) : html`<section class="paths-card"><p class="paths-empty">Send a ticket to see its path.</p></section>`}
-    ${
-      earlier.length
-        ? html`<ul class="paths-history">
-            ${earlier.map(historyRow)}
-          </ul>`
-        : nothing
-    }
-    ${curveSection()} ${state.error ? html`<p class="paths-error">${state.error}</p>` : nothing}
+    ${ticketSection()} ${curveSection()} ${state.error ? html`<p class="paths-error">${state.error}</p>` : nothing}
   </div>`;
 }
 

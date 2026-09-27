@@ -1,5 +1,6 @@
 :root {
-  --paths-w: clamp(400px, 36vw, 600px);
+  --paths-w: clamp(440px, 40vw, 640px);
+  --paths-compiled: #6d28d9;
   --paths-recalled: #1a7f37;
   --paths-explored: #b25e00;
   --paths-cost: #2563eb;
@@ -7,6 +8,7 @@
 .dark {
   --paths-recalled: #3fb950;
   --paths-explored: #e3a03a;
+  --paths-compiled: #a78bfa;
   --paths-cost: #6aa6ff;
 }
 body.paths-open .layout {
@@ -313,5 +315,338 @@ body.paths-open .layout {
 }
 .paths-error {
   font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* Paths v2: large, calm, plain labels (recorded at ~1440px) */
+.pb {
+  gap: 18px;
+  padding: 20px;
+  font-size: 16px;
+  line-height: 1.45;
+}
+.pb .paths-head h2 {
+  font-size: 22px;
+}
+.pb .paths-session {
+  font-size: 15px;
+}
+.pb-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--card);
+}
+.pb-card h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.pb-card h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.pb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pb-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 2px solid currentColor;
+}
+.pb-tier b {
+  font-size: 22px;
+  letter-spacing: 0.03em;
+}
+.pb-tier span {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.pb-tier.explored {
+  color: var(--paths-explored);
+}
+.pb-tier.recalled {
+  color: var(--paths-recalled);
+}
+.pb-tier.compiled {
+  color: var(--paths-compiled);
+}
+.pb-tier.idle {
+  color: var(--muted-foreground);
+  border-style: dashed;
+}
+.pb-live {
+  font-size: 13px;
+  color: var(--paths-cost);
+  animation: pb-pulse 1.4s ease-in-out infinite;
+}
+@keyframes pb-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.pb-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.pb-kpis div {
+  display: flex;
+  flex-direction: column;
+}
+.pb-kpis b {
+  font-size: 26px;
+  font-weight: 650;
+}
+.pb-kpis span {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.pb-quote {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--border);
+  background: var(--secondary);
+  border-radius: 6px;
+  font-size: 16px;
+  white-space: pre-wrap;
+}
+.pb-match {
+  margin: 0;
+  font-size: 19px;
+}
+.pb-match.none {
+  color: var(--paths-explored);
+}
+.pb-id {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-left: 6px;
+}
+.pb-meta {
+  margin: 4px 0 0;
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.pb-meta b {
+  color: var(--foreground);
+}
+.pb-saved {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--paths-explored);
+}
+.pb-earlier {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.pb-earlier li {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+.pb-earlier span {
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pb-compare {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 16px;
+}
+.pb-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.pb-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--secondary);
+}
+.pb-list code {
+  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pb-list li.ok {
+  box-shadow: inset 3px 0 var(--paths-recalled);
+}
+.pb-list li.extra {
+  box-shadow: inset 3px 0 var(--paths-explored);
+}
+.pb-list li.skip {
+  opacity: 0.5;
+  background: none;
+  border: 1px dashed var(--border);
+}
+.pb-list li.err {
+  box-shadow: inset 3px 0 var(--destructive);
+}
+.pb-mark {
+  width: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+li.ok .pb-mark {
+  color: var(--paths-recalled);
+}
+li.extra .pb-mark {
+  color: var(--paths-explored);
+}
+.pb-ms {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.pb-legend {
+  margin: 0;
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.pb-legend .ok {
+  color: var(--paths-recalled);
+}
+.pb-legend .extra {
+  color: var(--paths-explored);
+}
+.pb-plan summary {
+  cursor: pointer;
+  font-size: 15px;
+}
+.pb-plan pre {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 12px;
+  background: var(--secondary);
+  padding: 10px;
+  border-radius: 6px;
+}
+.pb-dim {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.pb-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 16px;
+}
+.pb-status {
+  margin: 0;
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.pb-headline {
+  margin: 0;
+  font-size: 18px;
+}
+.pb-headline.dim {
+  color: var(--muted-foreground);
+  font-size: 16px;
+}
+.pb-progress .pb-chart {
+  opacity: 0.6;
+}
+.pb-chart {
+  width: 100%;
+  height: auto;
+}
+.pb-chart .grid {
+  stroke: var(--border);
+}
+.pb-chart .axis {
+  fill: var(--muted-foreground);
+  font-size: 13px;
+}
+.pb-chart .bar.explored {
+  fill: var(--paths-explored);
+}
+.pb-chart .bar.recalled {
+  fill: var(--paths-recalled);
+}
+.pb-chart .bar.compiled {
+  fill: var(--paths-compiled);
+}
+.pb-chart .bar {
+  opacity: 0.8;
+}
+.pb-chart .bar.partial {
+  opacity: 0.35;
+}
+.pb-chart .line-cost {
+  fill: none;
+  stroke: var(--paths-cost);
+  stroke-width: 3;
+}
+.pb-chart .pt-cost {
+  fill: var(--background);
+  stroke: var(--paths-cost);
+  stroke-width: 2.5;
+}
+.pb-legend2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.pb-legend2 .sw {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.pb-legend2 .sw.explored {
+  background: var(--paths-explored);
+}
+.pb-legend2 .sw.recalled {
+  background: var(--paths-recalled);
+}
+.pb-legend2 .sw.compiled {
+  background: var(--paths-compiled);
+}
+.pb-legend2 .sw.cost {
+  background: var(--paths-cost);
+  height: 3px;
+  vertical-align: 3px;
+}
+.pb-foot {
+  margin: 0;
+  font-size: 13px;
   color: var(--muted-foreground);
 }

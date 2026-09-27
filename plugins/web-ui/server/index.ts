@@ -7,7 +7,7 @@ import { sharedSessionHtml } from "./shared-session.ts";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Readable } from "node:stream";
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -1573,7 +1573,9 @@ const apiRoutes: readonly WebRoute[] = [
     method: "GET",
     path: "/api/replay/results",
     handle: async (c) => {
-      const dir = process.env.REPLAY_DIR ?? join(ROOT, "..", "..", "..", "own-your-intelligence-hack", "replay");
+      const base = process.env.REPLAY_DIR ?? join(ROOT, "..", "..", "..", "own-your-intelligence-hack", "replay");
+      const snapshot = new URL(c.req.url ?? "/", "http://x").searchParams.get("run") === "label-run";
+      const dir = snapshot ? join(base, "label-run") : base;
       for (const name of ["results.jsonl", "sample-results.jsonl"]) {
         const file = join(dir, name);
         if (!existsSync(file)) continue;
@@ -1587,9 +1589,31 @@ const apiRoutes: readonly WebRoute[] = [
               return [];
             }
           });
-        return void json(c.res, 200, { source: name, rows });
+        return void json(c.res, 200, { source: snapshot ? "label-run" : name, rows });
       }
       return void json(c.res, 200, { source: null, rows: [] });
+    },
+  },
+  {
+    method: "GET",
+    path: "/api/replay/plans",
+    handle: async (c) => {
+      const dir = join(
+        process.env.REPLAY_DIR ?? join(ROOT, "..", "..", "..", "own-your-intelligence-hack", "replay"),
+        "plans",
+      );
+      const plans = existsSync(dir)
+        ? readdirSync(dir)
+            .filter((f) => f.endsWith(".json") && f.startsWith("plan-"))
+            .flatMap((f) => {
+              try {
+                return [JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown];
+              } catch {
+                return [];
+              }
+            })
+        : [];
+      return void json(c.res, 200, { plans });
     },
   },
   {
