@@ -95,6 +95,25 @@ export function createRoutedMemoryService(opts: {
       return [...new Set(rows.flat())].slice(0, limit);
     },
 
+    // Recall from routes that are not the notebook manager (read() already covers the manager).
+    async recallExternal(scopeId, context) {
+      const routes = routesFor(scopeId).filter((route) => route.recall !== false && route.manage === false);
+      const recalled = await Promise.all(
+        routes.map(async (route) => {
+          try {
+            return { route, body: (await providerFor(route).recall(scopeId, context)).trim() };
+          } catch (error) {
+            opts.onError?.(error, route.provider, "recall");
+            return { route, body: "" };
+          }
+        }),
+      );
+      return recalled
+        .filter(({ body }) => body)
+        .map(({ route, body }) => `### ${route.label ?? route.provider}\n${body}`)
+        .join("\n\n");
+    },
+
     async read(scopeId) {
       const manager = managerFor(scopeId);
       return manager ? manager.read(scopeId) : "";

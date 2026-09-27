@@ -35,12 +35,25 @@ interface MemoryReaderInput {
 
 export function contextMemory({ memory, scopes, actorId, onRead }: MemoryReaderInput) {
   return {
-    async recall(): Promise<string> {
+    async recall(query?: string): Promise<string> {
       const sections: string[] = [];
+      const q = query?.trim();
       for (const scope of scopes) {
         const body = (await memory.read(scope)).trim();
+        // External providers (Memorable etc.) only answer a query; fail soft so a provider never breaks a turn.
+        const external =
+          q && memory.recallExternal
+            ? (
+                await memory.recallExternal(scope, { query: q, actorId }).catch((error: unknown) => {
+                  console.warn(`[memory] external recall failed for ${scope}: ${String(error)}`);
+                  return "";
+                })
+              ).trim()
+            : "";
+        if (external) console.info(`[memory] external recall scope=${scope} chars=${external.length}`);
         onRead?.(scope);
-        if (body) sections.push(`### ${scope}\n${body}`);
+        const combined = [body, external].filter(Boolean).join("\n\n");
+        if (combined) sections.push(`### ${scope}\n${combined}`);
       }
       return sections.join("\n\n");
     },

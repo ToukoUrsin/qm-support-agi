@@ -164,3 +164,24 @@ test("ambiguous file aliases fail closed in the shared reader", async () => {
   assert.ok(result && "error" in result);
   assert.match(result.error, /ambiguous shared handle/);
 });
+
+test("turn recall consults external providers with the user message and fails soft", async () => {
+  const { input, memory } = await fixture();
+  const seen: string[] = [];
+  input.memory = {
+    ...memory,
+    recallExternal: async (scope, ctx) => {
+      seen.push(`${scope}:${ctx?.query}`);
+      if (scope === "channel:eng") throw new Error("provider down");
+      return "### Procedures\nMEMORABLE_POINTER";
+    },
+  };
+  const context = await resolveTurnContext(input);
+  const recalled = await context.recall("how do I deploy?");
+  assert.match(recalled, /### personal:alice[\s\S]*LOCAL_FACT[\s\S]*MEMORABLE_POINTER/);
+  assert.match(recalled, /SHARED_FACT/);
+  assert.ok(seen.includes("personal:alice:how do I deploy?"));
+  seen.length = 0;
+  assert.doesNotMatch(await context.recall(), /MEMORABLE_POINTER/);
+  assert.equal(seen.length, 0);
+});

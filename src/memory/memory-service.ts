@@ -56,6 +56,8 @@ export interface MemoryService {
   ): Promise<number>;
   query(scopeId: ScopeId, q: string, limit?: number, context?: MemoryRecallContext): Promise<string[]>;
   read(scopeId: ScopeId): Promise<string>;
+  /** Query-driven recall from non-notebook providers (e.g. Memorable); absent on the plain notebook. */
+  recallExternal?(scopeId: ScopeId, context?: MemoryRecallContext): Promise<string>;
   replace(scopeId: ScopeId, content: string, author?: string): Promise<void>;
   readHead?(scopeId: ScopeId): Promise<MemoryHead>;
   replaceIfRevision?(scopeId: ScopeId, content: string, revision: string, author?: string): Promise<boolean>;
