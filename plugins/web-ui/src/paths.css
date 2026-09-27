@@ -650,3 +650,6 @@ li.extra .pb-mark {
   font-size: 13px;
   color: var(--muted-foreground);
 }
+.pb-kpis:has(> div:nth-child(4)) {
+  grid-template-columns: repeat(4, 1fr);
+}

@@ -269,12 +269,15 @@ interface Recall {
   title?: string;
   similarity?: number;
   normalized?: string;
+  normalizer?: string;
   backend?: string;
   steps?: string[];
   tools?: string[];
   uses?: number;
   closest?: string | null;
   planId?: string;
+  compiled?: boolean;
+  ms?: number;
   earlierTickets?: { id: string; text: string; tier?: string }[];
 }
 
@@ -362,12 +365,12 @@ function comparison(pathTools: string[], calls: ToolStep[]): TemplateResult {
         <h4>This ticket</h4>
         <ol class="pb-list">
           ${run.map(
-          (c) =>
-            html`<li class=${c.error ? "err" : inPath.has(c.name) ? "ok" : "extra"}>
-              <span class="pb-mark">${c.error ? "!" : inPath.has(c.name) ? "✓" : "+"}</span><code>${c.name}</code
-              ><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
-            </li>`,
-        )}
+            (c) =>
+              html`<li class=${c.error ? "err" : inPath.has(c.name) ? "ok" : "extra"}>
+                <span class="pb-mark">${c.error ? "!" : inPath.has(c.name) ? "✓" : "+"}</span><code>${c.name}</code
+                ><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+              </li>`,
+          )}
           ${skipped.map((t) => html`<li class="skip"><span class="pb-mark">–</span><code>${t}</code><span class="pb-ms">skipped</span></li>`)}
         </ol>
       </div>
@@ -395,17 +398,26 @@ function ticketSection(): TemplateResult {
   const uses = r?.uses;
   return html`<section class="pb-card">
     <div class="pb-row">${tierBadge(tier, running)} ${running ? html`<span class="pb-live">live</span>` : nothing}</div>
-    <div class="pb-kpis">
-      <div><b>${fmtMs(elapsed)}</b><span>time</span></div>
-      <div><b>${cost == null ? "—" : fmtUsd(cost)}</b><span>cost</span></div>
-      <div><b>${calls.length}</b><span>tool calls</span></div>
-    </div>
-
+    ${
+      r?.compiled
+        ? html`<div class="pb-kpis">
+            <div><b>${fmtMs(r.ms ?? elapsed)}</b><span>time</span></div>
+            <div><b>$0.00</b><span>cost</span></div>
+            <div><b>0</b><span>model calls</span></div>
+            <div><b>${calls.length - 1}</b><span>tool calls</span></div>
+          </div>`
+        : html`<div class="pb-kpis">
+            <div><b>${fmtMs(elapsed)}</b><span>time</span></div>
+            <div><b>${cost == null ? "—" : fmtUsd(cost)}</b><span>cost</span></div>
+            <div><b>${calls.length}</b><span>tool calls</span></div>
+          </div>`
+    }
     ${
       r?.normalized
         ? html`<div class="pb-block">
             <h4>Standardized request</h4>
             <p class="pb-quote">${r.normalized}</p>
+            ${r.normalizer === "river" ? html`<p class="pb-meta">standardized by <b>River</b></p>` : nothing}
           </div>`
         : nothing
     }
@@ -413,19 +425,25 @@ function ticketSection(): TemplateResult {
     <div class="pb-block">
       <h4>Matched to</h4>
       ${
-        r?.found
-          ? html`<p class="pb-match"><b>${r.title ?? "learned path"}</b> <code class="pb-id">${r.id ?? ""}</code></p>
+        r?.compiled
+          ? html`<p class="pb-match"><b>Compiled plan</b> <code class="pb-id">${r.planId}</code></p>
               <p class="pb-meta">
-                ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}found in
-                <b>${r.backend === "memorable" || !r.backend ? "Memorable" : r.backend}</b> memory
+                ${(r.tools ?? []).join(" → ")} · <b>${fmtMs(r.ms ?? 0)}</b> · <b>0 model calls</b> · deterministic
+                program, no LLM
               </p>`
-          : r
-            ? html`<p class="pb-match none">No learned path yet</p>
+          : r?.found
+            ? html`<p class="pb-match"><b>${r.title ?? "learned path"}</b> <code class="pb-id">${r.id ?? ""}</code></p>
                 <p class="pb-meta">
-                  ${r.closest ? html`closest: ${r.closest.length > 60 ? `${r.closest.slice(0, 60)}…` : r.closest}${r.similarity != null ? ` (${r.similarity.toFixed(2)})` : ""} · ` : nothing}searched
-                  Memorable memory
+                  ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}found in
+                  <b>${r.backend === "memorable" || !r.backend ? "Memorable" : r.backend}</b> memory
                 </p>`
-            : html`<p class="pb-meta">${running ? "Looking up memory…" : "No memory lookup in this ticket."}</p>`
+            : r
+              ? html`<p class="pb-match none">No learned path yet</p>
+                  <p class="pb-meta">
+                    ${r.closest ? html`closest: ${r.closest.length > 60 ? `${r.closest.slice(0, 60)}…` : r.closest}${r.similarity != null ? ` (${r.similarity.toFixed(2)})` : ""} · ` : nothing}searched
+                    Memorable memory
+                  </p>`
+              : html`<p class="pb-meta">${running ? "Looking up memory…" : "No memory lookup in this ticket."}</p>`
       }
       ${
         saved
@@ -438,20 +456,21 @@ function ticketSection(): TemplateResult {
     </div>
 
     ${
-      r?.found
+      r?.found && !r.compiled
         ? html`<div class="pb-block">
             <h4>The learned path${uses != null ? ` · used ${uses}× before` : ""}</h4>
             ${
-            r.earlierTickets?.length
-              ? html`<ul class="pb-earlier">
-                  ${r.earlierTickets
-                  .slice(0, 5)
-                  .map(
-                    (e) => html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
-                  )}
-                </ul>`
-              : nothing
-          }
+              r.earlierTickets?.length
+                ? html`<ul class="pb-earlier">
+                    ${r.earlierTickets
+                    .slice(0, 5)
+                    .map(
+                      (e) =>
+                        html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
+                    )}
+                  </ul>`
+                : nothing
+            }
           </div>`
         : nothing
     }
@@ -462,11 +481,11 @@ function ticketSection(): TemplateResult {
             <h4>This ticket's tool calls</h4>
             <ol class="pb-list">
               ${calls.map(
-              (c) =>
-                html`<li class=${c.error ? "err" : ""}>
-                  <code>${c.name}</code><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
-                </li>`,
-            )}
+                (c) =>
+                  html`<li class=${c.error ? "err" : ""}>
+                    <code>${c.name}</code><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+                  </li>`,
+              )}
             </ol>
           </div>`
     }
@@ -478,7 +497,7 @@ function ticketSection(): TemplateResult {
               <code>${plan.id}</code>
               ${plan.enabled === false ? html`<span class="pb-dim">(not yet promoted)</span>` : nothing}
             </summary>
-            <pre>${JSON.stringify({ ...plan, reply: undefined }, null, 2)}</pre>
+            <pre>${JSON.stringify(r?.compiled ? plan : { ...plan, reply: undefined }, null, 2)}</pre>
           </details>`
         : nothing
     }
@@ -601,11 +620,11 @@ function curveSection(): TemplateResult {
         : first
           ? html`<p class="pb-headline dim">
               So far: tickets ${first.from}–${first.to} <b>${fmtUsd(first.cost)}</b>/ticket${
-              last
-                ? html` → tickets ${last.from}–${last.to} <b>${fmtUsd(last.cost)}</b>/ticket,
-                    ${pct(last.share.recalled + last.share.compiled)} reused`
-                : nothing
-            }
+                last
+                  ? html` → tickets ${last.from}–${last.to} <b>${fmtUsd(last.cost)}</b>/ticket,
+                      ${pct(last.share.recalled + last.share.compiled)} reused`
+                  : nothing
+              }
             </p>`
           : nothing
     }

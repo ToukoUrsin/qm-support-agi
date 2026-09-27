@@ -13,6 +13,7 @@ import {
 import type { ScopeId, SessionEntry } from "../types.ts";
 import type { Harness, HarnessTurnInput, HarnessTurnResult, RuntimeChoice } from "./harness.ts";
 import { withTapedEntryMirrors } from "./harness-shared.ts";
+import { tryCompiledTurn } from "./compiled-route.ts";
 import { NON_INTERACTIVE_THINKING_LEVEL, NON_INTERACTIVE_FAST_MODE } from "../core/turn-options.ts";
 import { NonRetryableTurnError } from "../core/turn-error.ts";
 import { createGrindMeter } from "./grind.ts";
@@ -264,6 +265,8 @@ export function createHarnessRouter(
     tools: utility.tools,
     turns: {
       async runTurn(input) {
+        const compiled = await tryCompiledTurn(input);
+        if (compiled) return compiled;
         const choice = await resolve(input);
         const adapter = adapters.get(choice.harnessId);
         if (!adapter) throw new Error(`harness ${choice.harnessId} is unavailable`);

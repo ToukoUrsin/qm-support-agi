@@ -15,7 +15,7 @@ memorable=(MEMORY_PROVIDER_CONFIG="$MEM_CFG" MEMORABLE_BACKEND=local MEMORABLE_N
   MEMORABLE_HOME="${MEMORABLE_HOME:-$(dirname "$R")/own-your-intelligence-hack/.memorable-home}" \
   MEMORABLE_API_URL=https://memorable-extraction-api.memorable.workers.dev)
 start() { local name=$1 dir=$2; shift 2; (cd "$dir" && nohup env "$@" >"$H/logs/$name.log" 2>&1 & echo $! >"$H/logs/$name.pid"); }
-start core "$R" "${common[@]}" "${memorable[@]}" HARNESS=pi PORT=$CORE \
+start core "$R" "${common[@]}" "${memorable[@]}" HARNESS=pi PORT=$CORE COMPILED_ROUTES="${COMPILED_ROUTES:-1}" \
   DATABASE_URL=postgres://$USER@localhost:5432/qm_hack SESSION_STORE=postgres RUN_STORE=postgres \
   ADMIN_GRANTS="$ADMIN:org_admin" PUBLIC_WEB_URL=http://localhost:$PORTAL \
   SANDBOX_BACKEND=local LOCAL_SANDBOX_IMAGE=qm-sandbox-local:latest PUBLIC_API_URL=http://host.docker.internal:$CORE \
