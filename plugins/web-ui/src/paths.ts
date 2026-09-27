@@ -27,6 +27,7 @@ interface Turn {
   mode: "recalled" | "explored" | "none";
   savedPath: boolean;
   costUsd: number | null;
+  modelCalls: number | null;
 }
 
 interface ReplayRow {
@@ -123,6 +124,7 @@ function buildTurns(entries: SessionEntry[]): Turn[] {
         mode: "none",
         savedPath: false,
         costUsd: null,
+        modelCalls: null,
       };
       turns.push(cur);
       continue;
@@ -186,6 +188,7 @@ async function fetchTurnCosts(sessionId: string, scopeId: string, turns: Turn[])
         ? q.turnSeq >= t.seq && (!next || q.turnSeq < next.seq)
         : q.createdAt >= t.startedAt && (!next || q.createdAt < next.startedAt),
     );
+    t.modelCalls = mine.length;
     if (mine.length) t.costUsd = mine.reduce((s, q) => s + (q.usage?.costUsd ?? 0), 0);
   });
 }
@@ -323,6 +326,15 @@ function savedOf(t: Turn): { id?: string; title?: string } | null {
   return r ? { id: r.id as string | undefined, title: r.title as string | undefined } : {};
 }
 
+type Host = "River" | "Memorable" | "GBrain" | "Shopify" | "QM";
+function hostOf(tool: string): Host {
+  if (tool === "recall_path" || tool === "save_path") return "Memorable";
+  if (tool === "search_kb" || tool === "read_page") return "GBrain";
+  if (tool === "route_request" || tool === "send_reply" || tool === "notify_team") return "QM";
+  return "Shopify";
+}
+const hostTag = (h: Host): TemplateResult => html`<span class="pb-host h-${h.toLowerCase()}">${h}</span>`;
+
 const toolOfStep = (s: string): string => s.trim().split(/[\s(]/)[0] ?? s;
 
 // The current ticket = the latest turn plus earlier follow-up turns back to the one that called recall_path.
@@ -358,7 +370,7 @@ function comparison(pathTools: string[], calls: ToolStep[]): TemplateResult {
       <div>
         <h4>Learned path</h4>
         <ol class="pb-list">
-          ${pathTools.map((t) => html`<li class=${ran.has(t) ? "ok" : "skip"}><code>${t}</code></li>`)}
+          ${pathTools.map((t) => html`<li class=${ran.has(t) ? "ok" : "skip"}><code>${t}</code>${hostTag(hostOf(t))}</li>`)}
         </ol>
       </div>
       <div>
@@ -367,11 +379,13 @@ function comparison(pathTools: string[], calls: ToolStep[]): TemplateResult {
           ${run.map(
             (c) =>
               html`<li class=${c.error ? "err" : inPath.has(c.name) ? "ok" : "extra"}>
-                <span class="pb-mark">${c.error ? "!" : inPath.has(c.name) ? "✓" : "+"}</span><code>${c.name}</code
-                ><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+                <span class="pb-mark">${c.error ? "!" : inPath.has(c.name) ? "✓" : "+"}</span
+                ><code>${c.name}</code>${hostTag(hostOf(c.name))}<span class="pb-ms"
+                  >${c.ms == null ? "…" : fmtMs(c.ms)}</span
+                >
               </li>`,
           )}
-          ${skipped.map((t) => html`<li class="skip"><span class="pb-mark">–</span><code>${t}</code><span class="pb-ms">skipped</span></li>`)}
+          ${skipped.map((t) => html`<li class="skip"><span class="pb-mark">–</span><code>${t}</code>${hostTag(hostOf(t))}<span class="pb-ms">skipped</span></li>`)}
         </ol>
       </div>
     </div>
@@ -415,7 +429,7 @@ function ticketSection(): TemplateResult {
     ${
       r?.normalized
         ? html`<div class="pb-block">
-            <h4>Standardized request</h4>
+            <h4>Standardized request ${hostTag("River")}</h4>
             <p class="pb-quote">${r.normalized}</p>
             ${r.normalizer === "river" ? html`<p class="pb-meta">standardized by <b>River</b></p>` : nothing}
           </div>`
@@ -483,7 +497,9 @@ function ticketSection(): TemplateResult {
               ${calls.map(
                 (c) =>
                   html`<li class=${c.error ? "err" : ""}>
-                    <code>${c.name}</code><span class="pb-ms">${c.ms == null ? "…" : fmtMs(c.ms)}</span>
+                    <code>${c.name}</code>${hostTag(hostOf(c.name))}<span class="pb-ms"
+                      >${c.ms == null ? "…" : fmtMs(c.ms)}</span
+                    >
                   </li>`,
               )}
             </ol>
@@ -639,6 +655,169 @@ function curveSection(): TemplateResult {
   </section>`;
 }
 
+// ---- Route map: Customer → River → three lanes, highlighting the lane this ticket took ----
+const MAP_W = 560;
+const MAP_H = 284;
+const LANE_X = 222;
+const LANE_W = 306;
+const LANE_H = 84;
+const LANE_GAP = 12;
+// Each node line is [text, host?]; host words are tinted so every sponsor is visible where it acts.
+type NodeLine = [string, Host?];
+const LANES: { tier: Tier; label: string; nodes: NodeLine[][] }[] = [
+  {
+    tier: "compiled",
+    label: "COMPILED",
+    nodes: [[["QM", "QM"], ["JSON plan"]], [["Shopify", "Shopify"], ["tools"]], [["Reply"]]],
+  },
+  {
+    tier: "recalled",
+    label: "RECALLED",
+    nodes: [[["Memorable", "Memorable"], ["path"]], [["QM", "QM"], ["agent"]], [["Reply"]]],
+  },
+  {
+    tier: "explored",
+    label: "EXPLORED",
+    nodes: [
+      [["QM", "QM"], ["agent"]],
+      [
+        ["GBrain", "GBrain"],
+        ["+ Shopify", "Shopify"],
+      ],
+      [["Memorable", "Memorable"], ["saves"]],
+    ],
+  },
+];
+const laneY = (i: number): number => 4 + i * (LANE_H + LANE_GAP);
+const NODE_W = 86;
+const NODE_GAP = (LANE_W - 16 - NODE_W * 3) / 2;
+const nodeX = (j: number): number => LANE_X + 8 + j * (NODE_W + NODE_GAP);
+const NODE_Y = 24;
+const NODE_H = 34;
+const RIVER = { x: 84, y: 42, w: 122, h: 200 };
+const CUST = { x: 2, y: 114, w: 66, h: 56 };
+const MID = RIVER.y + RIVER.h / 2;
+
+function riverLabel(r: Recall | null): string {
+  const fromRow = state.replay.find((row) => (row as { normalizer?: string }).normalizer?.startsWith("river"));
+  const n = r?.normalizer?.startsWith("river")
+    ? r.normalizer
+    : (fromRow as { normalizer?: string } | undefined)?.normalizer;
+  const ver = n?.split(":")[1] ?? "r1@50";
+  return `River ${ver}`;
+}
+
+function laneShare(tier: Tier): TemplateResult {
+  const rows = state.replay;
+  if (!rows.length) return svg`<tspan class="rm-dim">no replay run yet</tspan>`;
+  const ok = rows.filter((row) => rowTier(row) !== "error");
+  const share = ok.filter((row) => rowTier(row) === tier).length / Math.max(ok.length, 1);
+  const inProgress = rows.length < EXPECTED;
+  return inProgress
+    ? svg`<tspan class="rm-dim">${Math.round(share * 100)}% of ${ok.length} · run in progress</tspan>`
+    : svg`<tspan class="rm-share-b">${Math.round(share * 100)}%</tspan> of ${ok.length} tickets`;
+}
+
+function routeMap(): TemplateResult {
+  const tt = state.turns.length ? ticketTurns(state.turns) : [];
+  const calls = tt.flatMap((t) => t.tools);
+  const r = recallOf(tt);
+  const compiled = !!r?.planId || (tt.length > 0 && tt.every((t) => t.tools.length > 0 && t.costUsd === 0));
+  const tier: Tier | "none" = !calls.length ? "none" : compiled ? "compiled" : r?.found ? "recalled" : "explored";
+  const running = tt.at(-1)?.running ?? false;
+  const elapsed = tt.reduce((s, t) => s + ((t.running ? Date.now() : t.endedAt) - t.startedAt), 0);
+  const cost = tt.some((t) => t.costUsd != null) ? tt.reduce((s, t) => s + (t.costUsd ?? 0), 0) : null;
+  const mc = tt.some((t) => t.modelCalls != null) ? tt.reduce((s, t) => s + (t.modelCalls ?? 0), 0) : null;
+  const nums =
+    tier === "compiled"
+      ? `${fmtMs(r?.ms ?? elapsed)} · $0.00 · 0 model calls`
+      : `${fmtMs(elapsed)} · ${cost == null ? "—" : fmtUsd(cost)} · ${mc == null ? "—" : mc} model call${mc === 1 ? "" : "s"}`;
+  const ti = LANES.findIndex((l) => l.tier === tier);
+  const ny = (i: number): number => laneY(i) + NODE_Y + NODE_H / 2;
+  const fork = (i: number): string =>
+    `M${RIVER.x + RIVER.w},${MID} C${RIVER.x + RIVER.w + 12},${MID} ${LANE_X - 10},${ny(i)} ${LANE_X + 8},${ny(i)}`;
+  const route =
+    ti >= 0
+      ? `M${CUST.x + CUST.w / 2},${MID} L${RIVER.x + RIVER.w},${MID} ` +
+        fork(ti).slice(fork(ti).indexOf("C")) +
+        ` L${nodeX(2) + NODE_W - 6},${ny(ti)}`
+      : "";
+  const std = r?.normalized ?? (tt.length ? "…" : "waiting for a ticket");
+  return html`<details class="pb-card rm" open>
+    <summary>
+      Route map
+      ${tier !== "none" ? html`<span class="rm-sum ${tier}">${tier}${running ? " · live" : ""}</span>` : nothing}
+    </summary>
+    <svg
+      class="rm-svg ${tier === "none" ? "idle" : "has-tier"}"
+      viewBox="0 0 ${MAP_W} ${MAP_H}"
+      role="img"
+      aria-label="Route map"
+    >
+      <defs>
+        <marker id="rm-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L10,5 L0,10 z" class="rm-ah"></path>
+        </marker>
+        ${LANES.map(
+          (
+            l,
+          ) => svg`<marker id="rm-a-${l.tier}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" class="rm-ah ${l.tier}"></path></marker>`,
+        )}
+      </defs>
+      <rect class="rm-box" x=${CUST.x} y=${CUST.y} width=${CUST.w} height=${CUST.h} rx="8"></rect>
+      <text class="rm-node-t" x=${CUST.x + CUST.w / 2} y=${MID - 3} text-anchor="middle">Customer</text>
+      <text class="rm-node-t" x=${CUST.x + CUST.w / 2} y=${MID + 11} text-anchor="middle">message</text>
+      <line class="rm-link" x1=${CUST.x + CUST.w} y1=${MID} x2=${RIVER.x - 2} y2=${MID} marker-end="url(#rm-a)"></line>
+      <rect class="rm-river" x=${RIVER.x} y=${RIVER.y} width=${RIVER.w} height=${RIVER.h} rx="10"></rect>
+      <text class="rm-river-t" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 20} text-anchor="middle">River</text>
+      <text class="rm-river-s" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 34} text-anchor="middle">${riverLabel(r)}</text>
+      <text class="rm-river-k" x=${RIVER.x + 8} y=${RIVER.y + 54}>STANDARDIZED</text>
+      <foreignObject x=${RIVER.x + 6} y=${RIVER.y + 60} width=${RIVER.w - 12} height=${RIVER.h - 66}>
+        <div xmlns="http://www.w3.org/1999/xhtml" class="rm-std">${std}</div>
+      </foreignObject>
+      ${LANES.map(
+        (l, i) =>
+          svg`<path class="rm-fork ${l.tier} ${ti >= 0 && ti !== i ? "dim" : ""}" d=${fork(i)} marker-end="url(#rm-a-${l.tier})"></path>`,
+      )}
+      ${LANES.map((l, i) => {
+        const y = laneY(i);
+        const on = ti === i;
+        return svg`<g class="rm-lane ${l.tier} ${ti >= 0 && !on ? "dim" : ""} ${on ? "on" : ""}">
+          <rect class="rm-lane-bg" x=${LANE_X} y=${y} width=${LANE_W} height=${LANE_H} rx="10"></rect>
+          <text class="rm-lane-t" x=${LANE_X + 10} y=${y + 15}>${l.label}</text>
+          <text class="rm-share" x=${LANE_X + LANE_W - 10} y=${y + 15} text-anchor="end">${laneShare(l.tier)}</text>
+          ${l.nodes.map((lines, j) => {
+            const x = nodeX(j);
+            const cy = y + NODE_Y + NODE_H / 2;
+            return svg`<rect class="rm-node" x=${x} y=${y + NODE_Y} width=${NODE_W} height=${NODE_H} rx="6"></rect>
+              ${lines.map(
+                (t, k) =>
+                  svg`<text class="rm-node-t ${t[1] ? `h-${t[1].toLowerCase()}` : ""}" x=${x + NODE_W / 2} y=${cy + 4 + (k - (lines.length - 1) / 2) * 12} text-anchor="middle">${t[0]}</text>`,
+              )}
+              ${j < 2 ? svg`<line class="rm-link ${l.tier}" x1=${x + NODE_W} y1=${cy} x2=${x + NODE_W + NODE_GAP - 1} y2=${cy} marker-end="url(#rm-a-${l.tier})"></line>` : nothing}`;
+          })}
+          ${on ? svg`<text class="rm-nums" x=${LANE_X + 10} y=${y + LANE_H - 8}>${nums}</text>` : nothing}
+        </g>`;
+      })}
+      <path
+        class="rm-learn"
+        d="M${LANE_X + LANE_W},${ny(2)} C${MAP_W - 4},${ny(2)} ${MAP_W - 4},${ny(1)} ${LANE_X + LANE_W + 2},${ny(1)}"
+        marker-end="url(#rm-a)"
+      ></path>
+      <path
+        class="rm-learn"
+        d="M${LANE_X + LANE_W},${ny(1)} C${MAP_W - 4},${ny(1)} ${MAP_W - 4},${ny(0)} ${LANE_X + LANE_W + 2},${ny(0)}"
+        marker-end="url(#rm-a)"
+      ></path>
+      <text class="rm-learn-t" transform="translate(${MAP_W - 3},${MAP_H / 2}) rotate(-90)" text-anchor="middle">
+        learned
+      </text>
+      ${route ? svg`<circle class="rm-dot ${tier}" r="4.5"><animateMotion dur="2.6s" repeatCount="indefinite" path=${route}></animateMotion></circle>` : nothing}
+    </svg>
+  </details>`;
+}
+
 function panelTpl(onClose?: () => void): TemplateResult {
   return html`<div class="paths-panel pb">
     <header class="paths-head">
@@ -649,7 +828,8 @@ function panelTpl(onClose?: () => void): TemplateResult {
       >
       ${onClose ? html`<button class="paths-close" type="button" aria-label="Close Paths" @click=${onClose}>×</button>` : nothing}
     </header>
-    ${ticketSection()} ${curveSection()} ${state.error ? html`<p class="paths-error">${state.error}</p>` : nothing}
+    ${routeMap()} ${ticketSection()} ${curveSection()}
+    ${state.error ? html`<p class="paths-error">${state.error}</p>` : nothing}
   </div>`;
 }
 

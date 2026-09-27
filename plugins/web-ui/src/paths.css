@@ -653,3 +653,276 @@ li.extra .pb-mark {
 .pb-kpis:has(> div:nth-child(4)) {
   grid-template-columns: repeat(4, 1fr);
 }
+
+/* Route map */
+.rm {
+  --rm-compiled: #2e8b57;
+  --rm-recalled: #2f6fd6;
+  --rm-explored: #c77a0a;
+  padding-bottom: 8px;
+}
+.dark .rm {
+  --rm-compiled: #4fbf82;
+  --rm-recalled: #6a9cf0;
+  --rm-explored: #e3a03a;
+}
+.rm > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--foreground);
+}
+.rm-sum {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: #fff;
+}
+.rm-sum.compiled {
+  background: var(--rm-compiled);
+}
+.rm-sum.recalled {
+  background: var(--rm-recalled);
+}
+.rm-sum.explored {
+  background: var(--rm-explored);
+}
+.rm-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  font-family: inherit;
+}
+.rm-box,
+.rm-node {
+  fill: var(--card);
+  stroke: var(--border);
+  stroke-width: 1.2;
+}
+.rm-node-t {
+  font-size: 11.5px;
+  font-weight: 600;
+  fill: var(--foreground);
+}
+.rm-link,
+.rm-ah {
+  stroke: var(--muted-foreground);
+  fill: none;
+  stroke-width: 1.4;
+}
+.rm-ah {
+  fill: var(--muted-foreground);
+  stroke: none;
+}
+.rm-river {
+  fill: #1f2937;
+}
+.dark .rm-river {
+  fill: #0b1220;
+  stroke: var(--border);
+}
+.rm-river-t {
+  font-size: 15px;
+  font-weight: 700;
+  fill: #fff;
+}
+.rm-river-s {
+  font-size: 10px;
+  font-weight: 600;
+  fill: #cbd5e1;
+}
+.rm-river-k {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  fill: #94a3b8;
+}
+.rm-std {
+  font-size: 11px;
+  line-height: 1.3;
+  color: #f8fafc;
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-style: italic;
+}
+.rm-fork {
+  fill: none;
+  stroke-width: 1.6;
+  transition: opacity 0.3s;
+}
+.rm-lane {
+  transition: opacity 0.3s;
+}
+.rm-lane.dim,
+.rm-fork.dim {
+  opacity: 0.28;
+}
+.rm-lane-t {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.rm-share {
+  font-size: 11px;
+  fill: var(--muted-foreground);
+}
+.rm-share-b {
+  font-weight: 700;
+  fill: var(--foreground);
+}
+.rm-dim {
+  fill: var(--muted-foreground);
+  opacity: 0.8;
+}
+.rm-nums {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--foreground);
+}
+.rm-learn {
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.rm-learn-t {
+  font-size: 9.5px;
+  fill: var(--muted-foreground);
+  letter-spacing: 0.08em;
+}
+.rm-dot {
+  stroke: var(--card);
+  stroke-width: 1.5;
+}
+.rm-lane.on .rm-lane-bg {
+  stroke-width: 2;
+}
+.rm-lane.compiled .rm-lane-bg {
+  fill: color-mix(in srgb, var(--rm-compiled) 9%, var(--card));
+  stroke: var(--rm-compiled);
+  stroke-width: 1.2;
+}
+.rm-lane.compiled .rm-lane-t,
+.rm-dot.compiled,
+.rm-ah.compiled {
+  fill: var(--rm-compiled);
+}
+.rm-lane.compiled .rm-node {
+  stroke: color-mix(in srgb, var(--rm-compiled) 60%, var(--border));
+}
+.rm-fork.compiled,
+.rm-link.compiled {
+  stroke: var(--rm-compiled);
+}
+.rm-lane.recalled .rm-lane-bg {
+  fill: color-mix(in srgb, var(--rm-recalled) 9%, var(--card));
+  stroke: var(--rm-recalled);
+  stroke-width: 1.2;
+}
+.rm-lane.recalled .rm-lane-t,
+.rm-dot.recalled,
+.rm-ah.recalled {
+  fill: var(--rm-recalled);
+}
+.rm-lane.recalled .rm-node {
+  stroke: color-mix(in srgb, var(--rm-recalled) 60%, var(--border));
+}
+.rm-fork.recalled,
+.rm-link.recalled {
+  stroke: var(--rm-recalled);
+}
+.rm-lane.explored .rm-lane-bg {
+  fill: color-mix(in srgb, var(--rm-explored) 9%, var(--card));
+  stroke: var(--rm-explored);
+  stroke-width: 1.2;
+}
+.rm-lane.explored .rm-lane-t,
+.rm-dot.explored,
+.rm-ah.explored {
+  fill: var(--rm-explored);
+}
+.rm-lane.explored .rm-node {
+  stroke: color-mix(in srgb, var(--rm-explored) 60%, var(--border));
+}
+.rm-fork.explored,
+.rm-link.explored {
+  stroke: var(--rm-explored);
+}
+/* Sponsor/host tags */
+.pb,
+.rm {
+  --h-river: #475569;
+  --h-memorable: #7c3aed;
+  --h-gbrain: #0e7490;
+  --h-shopify: #5e8e3e;
+  --h-qm: #1f2937;
+}
+.dark .pb,
+.dark .rm {
+  --h-river: #94a3b8;
+  --h-memorable: #a78bfa;
+  --h-gbrain: #22d3ee;
+  --h-shopify: #95bf47;
+  --h-qm: #e5e7eb;
+}
+.pb-host {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  vertical-align: middle;
+  text-transform: none;
+}
+.pb-host.h-river {
+  color: var(--h-river);
+  background: color-mix(in srgb, var(--h-river) 14%, transparent);
+}
+.pb-host.h-memorable {
+  color: var(--h-memorable);
+  background: color-mix(in srgb, var(--h-memorable) 14%, transparent);
+}
+.pb-host.h-gbrain {
+  color: var(--h-gbrain);
+  background: color-mix(in srgb, var(--h-gbrain) 14%, transparent);
+}
+.pb-host.h-shopify {
+  color: var(--h-shopify);
+  background: color-mix(in srgb, var(--h-shopify) 14%, transparent);
+}
+.pb-host.h-qm {
+  color: var(--h-qm);
+  background: color-mix(in srgb, var(--h-qm) 12%, transparent);
+}
+.rm-node-t.h-river {
+  fill: var(--h-river);
+  font-weight: 800;
+}
+.rm-node-t.h-memorable {
+  fill: var(--h-memorable);
+  font-weight: 800;
+}
+.rm-node-t.h-gbrain {
+  fill: var(--h-gbrain);
+  font-weight: 800;
+}
+.rm-node-t.h-shopify {
+  fill: var(--h-shopify);
+  font-weight: 800;
+}
+.rm-node-t.h-qm {
+  fill: var(--h-qm);
+  font-weight: 800;
+}
