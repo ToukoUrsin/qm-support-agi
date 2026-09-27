@@ -284,6 +284,14 @@ interface Recall {
   earlierTickets?: { id: string; text: string; tier?: string }[];
 }
 
+const storeLabel = (backend?: string): string =>
+  !backend || backend.startsWith("memorable") ? "Memorable" : "Memorable procedure (local cache)";
+
+function pathTitle(r: Recall): string {
+  const raw = r.title && !/^(qm-chat|proc-\d+$)/.test(r.title) ? r.title : r.normalized?.replace(/^Task \d+:\s*/, "");
+  return raw ? raw.replace(/[_]+/g, " ").replace(/\.$/, "").trim() : "learned path";
+}
+
 function parseJsonish(text: string): Record<string, unknown> | null {
   const tryParse = (t: string): unknown => {
     try {
@@ -452,10 +460,10 @@ function ticketSection(): TemplateResult {
                 program, no LLM
               </p>`
           : r?.found
-            ? html`<p class="pb-match"><b>${r.title ?? "learned path"}</b> <code class="pb-id">${r.id ?? ""}</code></p>
+            ? html`<p class="pb-match"><b>${pathTitle(r)}</b> <code class="pb-id">${r.id ?? ""}</code></p>
                 <p class="pb-meta">
-                  ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}found in
-                  <b>${!r.backend || r.backend.startsWith("memorable") ? "Memorable" : r.backend}</b> memory
+                  ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}recalled from
+                  <b>${storeLabel(r.backend)}</b>
                 </p>`
             : r
               ? html`<p class="pb-match none">No learned path yet</p>
@@ -478,7 +486,8 @@ function ticketSection(): TemplateResult {
     ${
       r?.found && !r.compiled
         ? html`<div class="pb-block">
-            <h4>The learned path${uses != null ? ` · used ${uses}× before` : ""}</h4>
+            <h4>The learned path · ${uses ? `used ${uses}× before` : "learned from 1 earlier ticket"}</h4>
+            <p class="pb-match"><b>${pathTitle(r)}</b></p>
             ${
               r.earlierTickets?.length
                 ? html`<ul class="pb-earlier">
@@ -486,7 +495,10 @@ function ticketSection(): TemplateResult {
                       .slice(0, 5)
                       .map(
                         (e) =>
-                          html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
+                          html`<li>
+                            <code>${e.id.startsWith("qm-chat") ? "chat" : e.id}</code
+                            ><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span>
+                          </li>`,
                       )}
                   </ul>`
                 : nothing
@@ -566,7 +578,7 @@ function buckets(rows: ReplayRow[]): Bucket[] {
 function curveChart(bs: Bucket[]): TemplateResult {
   const W = 560;
   const H = 250;
-  const pad = { l: 50, r: 16, t: 16, b: 40 };
+  const pad = { l: 50, r: 56, t: 16, b: 40 };
   const slots = Math.max(EXPECTED / BUCKET, bs.length);
   const bw = (W - pad.l - pad.r) / slots;
   const ih = H - pad.t - pad.b;
@@ -583,6 +595,19 @@ function curveChart(bs: Bucket[]): TemplateResult {
       (f) => svg`<line class="grid" x1=${pad.l} x2=${W - pad.r} y1=${yc(f * maxCost)} y2=${yc(f * maxCost)}></line>
         <text class="axis" x=${pad.l - 8} y=${yc(f * maxCost) + 5} text-anchor="end">$${(f * maxCost).toFixed(2)}</text>`,
     )}
+    ${[0, 0.5, 1].map(
+      (f) =>
+        svg`<text class="axis axis-share" x=${W - pad.r + 8} y=${pad.t + (1 - f) * ih + 5}>${Math.round(f * 100)}%</text>`,
+    )}
+    <text
+      class="axis axis-share"
+      x=${W - 4}
+      y=${pad.t + ih / 2}
+      text-anchor="middle"
+      transform="rotate(90 ${W - 4} ${pad.t + ih / 2})"
+    >
+      of tickets
+    </text>
     ${bs.map((b, i) => {
       if (!b.n) return svg``;
       const x = pad.l + bw * i + 2;
@@ -594,14 +619,15 @@ function curveChart(bs: Bucket[]): TemplateResult {
       });
     })}
     <line class="line-baseline" x1=${pad.l} x2=${W - pad.r} y1=${yc(BASELINE_COST)} y2=${yc(BASELINE_COST)}></line>
-    <text class="axis baseline-label" x=${W - pad.r} y=${yc(BASELINE_COST) - 6} text-anchor="end">
-      agent without memory $${BASELINE_COST.toFixed(2)}
-    </text>
     ${pts.length > 1 ? svg`<polyline class="line-cost" points=${pts.join(" ")}></polyline>` : nothing}
     ${pts.map((p) => {
       const [x, y] = p.split(",");
       return svg`<circle class="pt-cost" cx=${x} cy=${y} r="4"></circle>`;
     })}
+    <rect class="baseline-chip" x=${pad.l + 4} y=${yc(BASELINE_COST) - 22} width="186" height="18" rx="4"></rect>
+    <text class="axis baseline-label" x=${pad.l + 10} y=${yc(BASELINE_COST) - 8}>
+      agent without memory $${BASELINE_COST.toFixed(2)}
+    </text>
     <text class="axis" x=${pad.l} y=${H - 12}>ticket 1</text>
     <text class="axis" x=${W / 2} y=${H - 12} text-anchor="middle">${(slots * BUCKET) / 2}</text>
     <text class="axis" x=${W - pad.r} y=${H - 12} text-anchor="end">${slots * BUCKET}</text>
@@ -661,8 +687,9 @@ function curveSection(): TemplateResult {
       <span><i class="sw recalled"></i>recalled path</span>
       <span><i class="sw compiled"></i>compiled</span>
       <span><i class="sw cost"></i>cost per ticket</span>
+      <span><i class="sw baseline"></i>agent without memory ($${BASELINE_COST.toFixed(2)})</span>
     </div>
-    <p class="pb-foot">Each bar is 25 tickets; its colors show how those tickets were handled.</p>
+    <p class="pb-foot">bars = share of tickets per ${BUCKET} (right axis) · line = cost per ticket ($, left axis)</p>
   </section>`;
 }
 
@@ -782,12 +809,15 @@ function routeMap(): TemplateResult {
       <text class="rm-node-t" x=${CUST.x + CUST.w / 2} y=${MID - 3} text-anchor="middle">Customer</text>
       <text class="rm-node-t" x=${CUST.x + CUST.w / 2} y=${MID + 11} text-anchor="middle">message</text>
       <line class="rm-link" x1=${CUST.x + CUST.w} y1=${MID} x2=${RIVER.x - 2} y2=${MID} marker-end="url(#rm-a)"></line>
-      <rect class="rm-river" x=${RIVER.x} y=${RIVER.y} width=${RIVER.w} height=${RIVER.h} rx="10"></rect>
-      <text class="rm-river-t" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 20} text-anchor="middle">River</text>
-      <text class="rm-river-s" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 34} text-anchor="middle">${riverSub}</text>
-      <text class="rm-river-k" x=${RIVER.x + 8} y=${RIVER.y + 54}>STANDARDIZED</text>
-      <foreignObject x=${RIVER.x + 6} y=${RIVER.y + 60} width=${RIVER.w - 12} height=${RIVER.h - 66}>
-        <div xmlns="http://www.w3.org/1999/xhtml" class="rm-std">${std}</div>
+      <foreignObject x=${RIVER.x} y=${RIVER.y} width=${RIVER.w} height=${RIVER.h}>
+        <div xmlns="http://www.w3.org/1999/xhtml" class="rm-river-wrap">
+          <div class="rm-river-box">
+            <div class="rm-river-t">${riverLabel(r)}</div>
+            ${riverSub !== riverLabel(r) ? html`<div class="rm-river-s">${riverSub}</div>` : nothing}
+            <div class="rm-river-k">STANDARDIZED</div>
+            <div class="rm-std">${std}</div>
+          </div>
+        </div>
       </foreignObject>
       ${LANES.map(
         (l, i) =>
