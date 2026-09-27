@@ -528,6 +528,7 @@ function ticketSection(): TemplateResult {
 
 const EXPECTED = 400;
 const BUCKET = 25;
+const BASELINE_COST = 0.183;
 
 function rowTier(r: ReplayRow): Tier | "error" {
   if (r.tier === "error" || r.error) return "error";
@@ -566,10 +567,10 @@ function curveChart(bs: Bucket[]): TemplateResult {
   const W = 560;
   const H = 250;
   const pad = { l: 50, r: 16, t: 16, b: 40 };
-  const slots = EXPECTED / BUCKET;
+  const slots = Math.max(EXPECTED / BUCKET, bs.length);
   const bw = (W - pad.l - pad.r) / slots;
   const ih = H - pad.t - pad.b;
-  const maxCost = Math.max(0.05, ...bs.filter((b) => b.n).map((b) => b.cost)) * 1.1;
+  const maxCost = Math.max(BASELINE_COST, ...bs.filter((b) => b.n).map((b) => b.cost)) * 1.08;
   const yc = (v: number): number => pad.t + (1 - v / maxCost) * ih;
   const pts = bs.map((b, i) => (b.n ? `${pad.l + bw * (i + 0.5)},${yc(b.cost).toFixed(1)}` : "")).filter(Boolean);
   return html`<svg
@@ -592,14 +593,18 @@ function curveChart(bs: Bucket[]): TemplateResult {
         return svg`<rect class="bar ${t} ${b.complete ? "" : "partial"}" x=${x} y=${y} width=${bw - 4} height=${h}></rect>`;
       });
     })}
+    <line class="line-baseline" x1=${pad.l} x2=${W - pad.r} y1=${yc(BASELINE_COST)} y2=${yc(BASELINE_COST)}></line>
+    <text class="axis baseline-label" x=${W - pad.r} y=${yc(BASELINE_COST) - 6} text-anchor="end">
+      agent without memory $${BASELINE_COST.toFixed(2)}
+    </text>
     ${pts.length > 1 ? svg`<polyline class="line-cost" points=${pts.join(" ")}></polyline>` : nothing}
     ${pts.map((p) => {
       const [x, y] = p.split(",");
       return svg`<circle class="pt-cost" cx=${x} cy=${y} r="4"></circle>`;
     })}
     <text class="axis" x=${pad.l} y=${H - 12}>ticket 1</text>
-    <text class="axis" x=${W / 2} y=${H - 12} text-anchor="middle">${EXPECTED / 2}</text>
-    <text class="axis" x=${W - pad.r} y=${H - 12} text-anchor="end">${EXPECTED}</text>
+    <text class="axis" x=${W / 2} y=${H - 12} text-anchor="middle">${(slots * BUCKET) / 2}</text>
+    <text class="axis" x=${W - pad.r} y=${H - 12} text-anchor="end">${slots * BUCKET}</text>
   </svg>`;
 }
 

@@ -921,3 +921,12 @@ li.extra .pb-mark {
   fill: var(--h-qm);
   font-weight: 800;
 }
+
+.pb-chart .line-baseline {
+  stroke: var(--text-muted, #6b7280);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.pb-chart .baseline-label {
+  font-weight: 600;
+}
