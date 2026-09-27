@@ -433,7 +433,13 @@ function ticketSection(): TemplateResult {
             <p class="pb-quote">${r.normalized}</p>
             ${r.normalizer === "river" ? html`<p class="pb-meta">standardized by <b>River</b></p>` : nothing}
           </div>`
-        : nothing
+        : r?.compiled && (plan?.match as { key?: string } | undefined)?.key
+          ? html`<div class="pb-block">
+              <h4>Plan match key</h4>
+              <p class="pb-quote">${(plan!.match as { key: string }).key}</p>
+              <p class="pb-meta">matched by <b>${r.normalizer ?? "plan"}</b> matcher</p>
+            </div>`
+          : nothing
     }
 
     <div class="pb-block">
@@ -742,7 +748,9 @@ function routeMap(): TemplateResult {
         fork(ti).slice(fork(ti).indexOf("C")) +
         ` L${nodeX(2) + NODE_W - 6},${ny(ti)}`
       : "";
-  const std = r?.normalized ?? (tt.length ? "…" : "waiting for a ticket");
+  const planKey = (planFor(r)?.match as { key?: string } | undefined)?.key;
+  const std = r?.normalized ?? planKey ?? (tt.length ? "…" : "waiting for a ticket");
+  const riverSub = !r?.normalized && planKey && !r?.normalizer?.startsWith("river") ? "plan match key" : riverLabel(r);
   return html`<details class="pb-card rm" open>
     <summary>
       Route map
@@ -771,7 +779,7 @@ function routeMap(): TemplateResult {
       <line class="rm-link" x1=${CUST.x + CUST.w} y1=${MID} x2=${RIVER.x - 2} y2=${MID} marker-end="url(#rm-a)"></line>
       <rect class="rm-river" x=${RIVER.x} y=${RIVER.y} width=${RIVER.w} height=${RIVER.h} rx="10"></rect>
       <text class="rm-river-t" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 20} text-anchor="middle">River</text>
-      <text class="rm-river-s" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 34} text-anchor="middle">${riverLabel(r)}</text>
+      <text class="rm-river-s" x=${RIVER.x + RIVER.w / 2} y=${RIVER.y + 34} text-anchor="middle">${riverSub}</text>
       <text class="rm-river-k" x=${RIVER.x + 8} y=${RIVER.y + 54}>STANDARDIZED</text>
       <foreignObject x=${RIVER.x + 6} y=${RIVER.y + 60} width=${RIVER.w - 12} height=${RIVER.h - 66}>
         <div xmlns="http://www.w3.org/1999/xhtml" class="rm-std">${std}</div>

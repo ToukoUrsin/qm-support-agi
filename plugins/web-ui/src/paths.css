@@ -1,15 +1,15 @@
 :root {
   --paths-w: clamp(440px, 40vw, 640px);
-  --paths-compiled: #6d28d9;
-  --paths-recalled: #1a7f37;
-  --paths-explored: #b25e00;
-  --paths-cost: #2563eb;
+  --paths-compiled: #2e8b57;
+  --paths-recalled: #2f6fd6;
+  --paths-explored: #c77a0a;
+  --paths-cost: #334155;
 }
 .dark {
-  --paths-recalled: #3fb950;
+  --paths-recalled: #6a9cf0;
   --paths-explored: #e3a03a;
-  --paths-compiled: #a78bfa;
-  --paths-cost: #6aa6ff;
+  --paths-compiled: #4fbf82;
+  --paths-cost: #e2e8f0;
 }
 body.paths-open .layout {
   margin-right: var(--paths-w);
@@ -656,15 +656,10 @@ li.extra .pb-mark {
 
 /* Route map */
 .rm {
-  --rm-compiled: #2e8b57;
-  --rm-recalled: #2f6fd6;
-  --rm-explored: #c77a0a;
+  --rm-compiled: var(--paths-compiled);
+  --rm-recalled: var(--paths-recalled);
+  --rm-explored: var(--paths-explored);
   padding-bottom: 8px;
-}
-.dark .rm {
-  --rm-compiled: #4fbf82;
-  --rm-recalled: #6a9cf0;
-  --rm-explored: #e3a03a;
 }
 .rm > summary {
   cursor: pointer;
