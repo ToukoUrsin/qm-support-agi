@@ -435,7 +435,7 @@ function ticketSection(): TemplateResult {
             ? html`<p class="pb-match"><b>${r.title ?? "learned path"}</b> <code class="pb-id">${r.id ?? ""}</code></p>
                 <p class="pb-meta">
                   ${r.similarity != null ? html`similarity <b>${r.similarity.toFixed(2)}</b> · ` : nothing}found in
-                  <b>${r.backend === "memorable" || !r.backend ? "Memorable" : r.backend}</b> memory
+                  <b>${!r.backend || r.backend.startsWith("memorable") ? "Memorable" : r.backend}</b> memory
                 </p>`
             : r
               ? html`<p class="pb-match none">No learned path yet</p>
@@ -463,11 +463,11 @@ function ticketSection(): TemplateResult {
               r.earlierTickets?.length
                 ? html`<ul class="pb-earlier">
                     ${r.earlierTickets
-                    .slice(0, 5)
-                    .map(
-                      (e) =>
-                        html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
-                    )}
+                      .slice(0, 5)
+                      .map(
+                        (e) =>
+                          html`<li><code>${e.id}</code><span>${e.text.split(" ").slice(0, 9).join(" ")}…</span></li>`,
+                      )}
                   </ul>`
                 : nothing
             }
